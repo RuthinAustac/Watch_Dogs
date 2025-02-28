@@ -13,14 +13,19 @@ else:
 
 def get_saved_code(filename, ide):
     """Fetches saved code from the database based on filename and IDE."""
-    conn = sqlite3.connect("code_snippets.db")
-    cursor = conn.cursor()
+    try:
+        with sqlite3.connect("code_snippets.db", check_same_thread=False) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT code FROM snippets WHERE filename = ? AND ide = ?", (filename, ide))
+            result = cursor.fetchone()
+        
+        if result and result[0]:
+            return f"📜 Saved Code from {ide} ({filename}):\n\n{result[0]}"
+        else:
+            return "❌ No saved code found for this file in the specified IDE."
     
-    cursor.execute("SELECT code FROM snippets WHERE filename = ? AND ide = ?", (filename, ide))
-    result = cursor.fetchone()
-    conn.close()
-    
-    return f"📜 Saved Code from {ide} ({filename}):\n\n{result[0]}" if result else "❌ No saved code found for this file in the specified IDE."
+    except sqlite3.Error as e:
+        return f"❌ Database Error: {e}"
 
 def generate_ai_response(prompt):
     """Generates an AI response using Gemini API."""
@@ -29,29 +34,28 @@ def generate_ai_response(prompt):
 
     try:
         response = ai_model.generate_content(prompt)
-        return response.text.strip() if response and hasattr(response, "text") else "⚠️ AI response is empty."
+        return response.text.strip() if response and hasattr(response, "text") and response.text else "⚠️ AI response is empty."
     except Exception as e:
         return f"⚠️ Error generating AI response: {str(e)}"
 
 def ai_assistant(query):
     """Processes user queries and retrieves code or interacts with Gemini AI."""
     words = query.lower().split()
-    
-    if "retrieve" in words or "show" in words:
-        filename, ide = None, None
+    filename, ide = None, None
 
-        for word in words:
-            if word.endswith((".py", ".java", ".cpp")):
-                filename = word
-            elif "vscode" in words or "vs code" in words:
-                ide = "VS Code"
-            elif "pycharm" in words:
-                ide = "PyCharm"
-            elif "intellij" in words:
-                ide = "IntelliJ IDEA"
+    for word in words:
+        if word.endswith((".py", ".java", ".cpp", ".c", ".js")):
+            filename = word
+        elif "vscode" in words or "vs code" in words:
+            ide = "VS Code"
+        elif "pycharm" in words:
+            ide = "PyCharm"
+        elif "intellij" in words:
+            ide = "IntelliJ IDEA"
 
-        return get_saved_code(filename, ide) if filename and ide else "❌ Please specify the filename and IDE correctly. Example: 'Retrieve test.py from VS Code'"
-    
+    if filename and ide:
+        return get_saved_code(filename, ide)
+
     return generate_ai_response(query)
 
 def start_ai_assistant():
@@ -65,7 +69,6 @@ def start_ai_assistant():
             break
         print(ai_assistant(query))
 
-# ✅ Fix: Ensure start_ai_server is defined
 def start_ai_server():
     """Runs the AI assistant in a separate thread for EchoIDE integration."""
     ai_thread = threading.Thread(target=start_ai_assistant, daemon=True)
