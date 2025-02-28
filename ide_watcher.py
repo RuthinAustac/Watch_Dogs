@@ -1,56 +1,86 @@
 import os
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from database import CodeDatabase
 import time
-import sqlite3
 
-WATCHED_DIRECTORIES = {
-    "IntelliJ IDEA": "C:\\Users\\ruthi\\IdeaProjects\\E-commerceapp\\src\\ecommerce",
-    "VS Code": "D:\\Projects\\VSCodeProject",  # Add correct path for VS Code
-    "PyCharm": "D:\\Projects\\PyCharmProject"  # Add correct path for PyCharm
-}
+db = CodeDatabase()
 
-DB_PATH = "code_snippets.db"
+class IDEWatcher(FileSystemEventHandler):
+    def on_modified(self, event):
+        """Handles file modifications and saves updated code to the database."""
+        if event.is_directory:
+            return
 
-def save_code_snippet(filename, ide, code):
-    """Saves the complete code snippet into the database."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''CREATE TABLE IF NOT EXISTS snippets (
-                        filename TEXT, ide TEXT, code TEXT, PRIMARY KEY (filename, ide))''')
-    
-    cursor.execute("INSERT OR REPLACE INTO snippets (filename, ide, code) VALUES (?, ?, ?)",
-                   (filename, ide, code))
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ Code saved: {filename} from {ide}")
+        filename = os.path.basename(event.src_path)
+        if filename.endswith((".db", ".db-wal", ".db-shm")):  
+            return  # ❌ Ignore database system files  
 
-def monitor_directory(path, ide):
-    """Monitors the directory for file changes."""
-    file_mod_times = {}
+        ide = detect_ide(event.src_path)  # Detect IDE (VS Code, PyCharm, etc.)
+        language = detect_language(filename)  # Detect programming language
 
-    while True:
-        for root, _, files in os.walk(path):
-            for file in files:
-                if file.endswith((".java", ".py", ".cpp")) and not file.endswith("~"):
-                    full_path = os.path.join(root, file)
-                    try:
-                        mod_time = os.path.getmtime(full_path)
-                        if file not in file_mod_times or file_mod_times[file] != mod_time:
-                            file_mod_times[file] = mod_time
-                            
-                            with open(full_path, "r", encoding="utf-8") as f:
-                                code = f.read()
-                                
-                            save_code_snippet(file, ide, code)
-                    except Exception as e:
-                        print(f"⚠️ Error reading {file}: {e}")
-        time.sleep(2)  # Check for changes every 2 seconds
+        print(f"🔄 File modified: {event.src_path}")  # ✅ Debugging log
 
-# ✅ Fix: Ensure start_ide_watcher() is defined
-def start_ide_watcher():
-    """Starts watching directories for all IDEs."""
-    print("🔍 Watching directories for code changes...")
-    for ide, directory in WATCHED_DIRECTORIES.items():
-        print(f"📂 Monitoring {directory} for {ide}")
-        monitor_directory(directory, ide)
+        try:
+            with open(event.src_path, "r", encoding="utf-8") as f:
+                new_code = f.read().strip()  # ✅ Strip to remove accidental whitespace differences
+
+            if not new_code:
+                print(f"⚠️ Skipping empty file: {filename}")
+                return
+
+            # ✅ Fetch last saved version to check for changes
+            last_saved_code = db.get_code(filename, ide).strip()
+            print(f"🔍 Previous Code in DB for {filename}:\n{last_saved_code[:100]}...")
+            print(f"🔍 New Code from File for {filename}:\n{new_code[:100]}...")
+
+            if last_saved_code == new_code:
+                print(f"⚠️ No changes detected in {filename}, skipping update.")
+                return
+
+            print(f"✅ Code change detected! Updating database for {filename}")
+            db.save_code(filename, ide, language, new_code)  # ✅ Save Updated Code
+        except Exception as e:
+            print(f"❌ Error reading file {filename}: {e}")
+
+def detect_ide(file_path):
+    """Detects which IDE is being used based on the file path."""
+    if "VSCode" in file_path or ".vscode" in file_path:
+        return "VS Code"
+    elif "PyCharm" in file_path:
+        return "PyCharm"
+    elif "IntelliJ" in file_path:
+        return "IntelliJ IDEA"
+    return "Unknown"
+
+def detect_language(filename):
+    """Detects the language based on file extension."""
+    ext = filename.split(".")[-1]
+    language_map = {
+        "py": "Python",
+        "java": "Java",
+        "cpp": "C++",
+        "c": "C",
+        "js": "JavaScript"
+    }
+    return language_map.get(ext, "Unknown")
+
+def start_watcher():
+    """Starts the file watcher."""
+    path = os.getcwd()  # ✅ Monitor current working directory
+    event_handler = IDEWatcher()
+    observer = Observer()
+    observer.schedule(event_handler, path, recursive=True)
+    observer.start()
+
+    print("👀 Watching for file changes in:", path)
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+if __name__ == "__main__":
+    start_watcher()
