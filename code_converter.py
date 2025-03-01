@@ -1,7 +1,7 @@
 import google.generativeai as genai
 
 # Set up Gemini API key
-GEMINI_API_KEY = ""  # Replace with your actual API key
+GEMINI_API_KEY = "AIzaSyAEwM1d2DqIYlyvbmdAVFnBDy8lYuO7Nbk"  # Replace with your actual API key
 genai.configure(api_key=GEMINI_API_KEY)
 
 def convert_code(code_snippet, source_lang, target_lang):
