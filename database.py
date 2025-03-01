@@ -91,3 +91,4 @@ class CodeDatabase:
 if __name__ == "__main__":
     db = CodeDatabase()
     print("📂 Database setup complete.")
+
