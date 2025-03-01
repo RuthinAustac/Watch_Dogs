@@ -3,6 +3,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from database import CodeDatabase
 import time
+from ide_monitor import WATCHED_DIRECTORIES
 
 db = CodeDatabase()
 
@@ -31,8 +32,8 @@ class IDEWatcher(FileSystemEventHandler):
 
             # ✅ Fetch last saved version to check for changes
             last_saved_code = db.get_code(filename, ide).strip()
-            print(f"🔍 Previous Code in DB for {filename}:\n{last_saved_code[:100]}...")
-            print(f"🔍 New Code from File for {filename}:\n{new_code[:100]}...")
+            print(f"🔍 Previous Code in DB for {filename}:\n{last_saved_code[:]}...")
+            print(f"🔍 New Code from File for {filename}:\n{new_code[:]}...")
 
             if last_saved_code == new_code:
                 print(f"⚠️ No changes detected in {filename}, skipping update.")
@@ -67,7 +68,7 @@ def detect_language(filename):
 
 def start_watcher():
     """Starts the file watcher."""
-    path = os.getcwd()  # ✅ Monitor current working directory
+    path = WATCHED_DIRECTORIES[0] # ✅ Monitor current working directory
     event_handler = IDEWatcher()
     observer = Observer()
     observer.schedule(event_handler, path, recursive=True)
